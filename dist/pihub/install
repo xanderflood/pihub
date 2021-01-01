@@ -6,13 +6,6 @@ sudo apt-get install python3-pip -y
 sudo pip3 install adafruit-circuitpython-lis3dh
 sudo pip3 install adafruit-circuitpython-ads1x15
 
-if [[ ! `go version` = *go1.15.* ]]; then
-	wget https://dl.google.com/go/go1.15.6.linux-armv6l.tar.gz
-	sudo tar -C /usr/local -xzf go1.15.6.linux-armv6l.tar.gz
-fi
-
-/usr/local/go/bin/go build -o dist/pihub/pihub ./main.go
-
 sudo tee /etc/systemd/system/pihub.service << EOF
 [Unit]
 Description=Pihub
