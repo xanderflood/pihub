@@ -1,0 +1,22 @@
+#!/bin/sh -xe
+
+rm -rf dist/artifacts
+mkdir dist/artifacts
+
+archive_name=pihub-${TRAVIS_TAG}.tar.gz
+archive_path=dist/artifacts/${archive_name}
+tar -czvf $archive_path dist/pihub/
+
+cat $archive_path | sha256sum > ${archive_path}.sha
+
+tee dist/artifacts/pihub-${TRAVIS_TAG}-install.sh << EOF
+#!/bin/sh -xe
+
+wget https://github.com/xanderflood/pihub/releases/tag/${TRAVIS_TAG}/download/${archive_name} -o /tmp/${archive_name}
+
+# TODO chec the sha
+tar -xzvf /tmp/${archive_name} ./pihub
+
+cd ./pihub
+./install
+EOF

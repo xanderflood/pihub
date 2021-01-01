@@ -1,0 +1,16 @@
+language: go
+
+go:
+- 1.15
+
+after_script: [./script/setup]
+
+deploy:
+  on:
+    tags: true
+  provider: releases
+  api_key: "GITHUB OAUTH TOKEN"
+
+  file_glob: true
+  file: dist/artifacts/*
+  skip_cleanup: true

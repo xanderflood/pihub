@@ -1,0 +1,47 @@
+#!/bin/sh -xe
+
+sudo apt-get update -y
+sudo apt-get upgrade -y
+sudo apt-get install python3-pip -y
+sudo pip3 install adafruit-circuitpython-lis3dh
+sudo pip3 install adafruit-circuitpython-ads1x15
+
+if [[ ! `go version` = *go1.15.* ]]; then
+	wget https://dl.google.com/go/go1.15.6.linux-armv6l.tar.gz
+	sudo tar -C /usr/local -xzf go1.15.6.linux-armv6l.tar.gz
+fi
+
+/usr/local/go/bin/go build -o dist/pihub/pihub ./main.go
+
+sudo tee /etc/systemd/system/pihub.service << EOF
+[Unit]
+Description=Pihub
+After=network.target
+
+[Service]
+ExecStart=$(pwd)/dist/pihub
+WorkingDirectory=$(pwd)/dist/pihub
+StandardOutput=inherit
+StandardError=inherit
+Restart=always
+User=pi
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+if sudo systemctl status --no-pager pihub.service; then
+	sudo systemctl daemon-reload
+	sudo systemctl restart pihub.service
+else
+	sudo systemctl enable pihub.service
+	sudo systemctl start pihub.service
+fi
+
+# check whether it's up
+sudo systemctl status --no-pager pihub.service
+
+echo << EOF
+The pihub service has been successfully installed. It should now
+be listening on 0.0.0.0:3141.
+EOF
