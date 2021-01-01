@@ -1,7 +1,7 @@
 language: go
 go:
 - 1.15
-after_script:
+before_deploy:
 - "./script/setup"
 deploy:
   on:
