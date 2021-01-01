@@ -24,4 +24,4 @@ cd ./pihub
 ./install
 EOF
 
-chmod +x pihub-${TRAVIS_TAG}-install.sh
+chmod +x dist/artifacts/pihub-${TRAVIS_TAG}-install.sh
