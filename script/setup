@@ -8,7 +8,7 @@ go build -o dist/pihub/pihub ./main.go
 
 archive_name=pihub-${TRAVIS_TAG}.tar.gz
 archive_path=dist/artifacts/${archive_name}
-tar -czvf $archive_path dist/pihub/ -C dist/
+tar -czvf $archive_path dist/pihub/ -C $PWD/dist/
 
 cat $archive_path | sha256sum > ${archive_path}.sha
 
@@ -19,7 +19,7 @@ tee dist/artifacts/pihub-${TRAVIS_TAG}-install.sh << EOF
 wget https://github.com/xanderflood/pihub/releases/download/${TRAVIS_TAG}/${archive_name} -O /tmp/${archive_name}
 
 # TODO chec the sha
-tar -xzvf /tmp/${archive_name} ./pihub
+tar -xzvf /tmp/${archive_name}
 
 cd ./pihub
 ./install
