@@ -124,7 +124,7 @@ func (a *ManagerAgent) Act(module string, action string, config JSONHack) (JSONH
 func main() {
 	router := buildMux()
 
-	http.ListenAndServe("0.0.0.0:3142", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	http.ListenAndServe("0.0.0.0:3141", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if bs, err := httputil.DumpRequest(r, true); err != nil {
 			fmt.Println("failed dumping request -- aborting", err.Error())
 			return
