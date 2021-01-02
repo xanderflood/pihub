@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/http/httputil"
 	"strconv"
 
 	rpio "github.com/stianeikeland/go-rpio"
@@ -86,7 +87,6 @@ type ErrorResponse struct {
 }
 
 type Manager interface {
-	// TODO pull each source (from a hard-coded map) and initialize each module
 	InitializeModules(specs map[string]ModuleSpec) error
 	Act(module string, action string, config JSONHack) (JSONHack, error)
 }
@@ -122,11 +122,28 @@ func (a *ManagerAgent) Act(module string, action string, config JSONHack) (JSONH
 }
 
 func main() {
+	router := buildMux()
+
+	http.ListenAndServe("0.0.0.0:3142", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if bs, err := httputil.DumpRequest(r, true); err != nil {
+			fmt.Println("failed dumping request -- aborting", err.Error())
+			return
+		} else {
+			fmt.Println("---DUMPING REQUEST ---")
+			fmt.Println(string(bs))
+		}
+
+		router.ServeHTTP(w, r)
+	}))
+}
+
+func buildMux() *http.ServeMux {
 	mgr := &ManagerAgent{
 		Modules: map[string]Module{},
 	}
 
-	http.Handle("/initialize", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mux := http.NewServeMux()
+	mux.Handle("/initialize", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
@@ -134,23 +151,22 @@ func main() {
 
 		var req InitializeRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			fmt.Println(err.Error())
+			fmt.Println("failed decoding body", err.Error())
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
 
 		if err := mgr.InitializeModules(req.Modules); err != nil {
-			fmt.Println(err.Error())
+			fmt.Println("failed initializing modules", err.Error())
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
 
-		fmt.Printf("Manager: %#v\n", mgr.Modules)
 		json.NewEncoder(w).Encode(InitializeResponse{NumModules: len(mgr.Modules)})
 
 		return
 	}))
-	http.Handle("/act", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mux.Handle("/act", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
@@ -158,13 +174,13 @@ func main() {
 
 		var req ActRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			fmt.Println(err.Error())
+			fmt.Println("failed decoding body", err.Error())
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
 
 		if result, err := mgr.Act(req.Module, req.Action, JSONHack{Blob: req.Config}); err != nil {
-			fmt.Println(err.Error())
+			fmt.Println("action failed", err.Error())
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		} else {
@@ -172,7 +188,7 @@ func main() {
 		}
 	}))
 
-	http.ListenAndServe("0.0.0.0:3141", nil)
+	return mux
 }
 
 type EchoModule struct{}
