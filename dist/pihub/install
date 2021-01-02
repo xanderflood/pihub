@@ -6,14 +6,16 @@ sudo apt-get install python3-pip -y
 sudo pip3 install adafruit-circuitpython-lis3dh
 sudo pip3 install adafruit-circuitpython-ads1x15
 
+install_location=${INSTALL_TO:-$PWD}
+
 sudo tee /etc/systemd/system/pihub.service << EOF
 [Unit]
 Description=Pihub
 After=network.target
 
 [Service]
-ExecStart=$(pwd)/pihub
-WorkingDirectory=$(pwd)/pihub
+ExecStart=${install_location}/pihub
+WorkingDirectory=${install_location}
 StandardOutput=inherit
 StandardError=inherit
 Restart=always
