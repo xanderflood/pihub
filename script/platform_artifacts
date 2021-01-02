@@ -1,0 +1,25 @@
+#!/bin/sh -xe
+
+go build -o dist/pihub/pihub ./main.go
+
+archive_name=pihub-${TRAVIS_TAG}-${GOOS}-${GOARCH}.tar.gz
+archive_path=dist/artifacts/${archive_name}
+tar -C $PWD/dist/ -czvf $archive_path ./pihub/
+
+cat $archive_path | sha256sum > ${archive_path}.sha
+
+script_name=pihub-${TRAVIS_TAG}-${GOOS}-${GOARCH}-install.sh
+script_path=dist/artifacts/${script_name}
+tee ${script_path} << EOF
+#!/bin/sh -xe
+
+wget https://github.com/xanderflood/pihub/releases/download/${TRAVIS_TAG}/${archive_name} -O /tmp/${archive_name}
+
+# TODO chec the sha
+tar -xzvf /tmp/${archive_name}
+
+cd ./pihub
+./install
+EOF
+
+chmod +x ${script_path}
