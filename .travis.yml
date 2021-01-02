@@ -8,6 +8,9 @@ before_deploy:
 deploy:
   on:
     tags: true
+  # use travis dpl v2, currently in beta
+  edge: true
+
   provider: releases
   file_glob: true
   file: dist/artifacts/*
