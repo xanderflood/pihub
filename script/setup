@@ -15,7 +15,7 @@ script_name=pihub-${TRAVIS_TAG}-install.sh
 tee dist/artifacts/pihub-${TRAVIS_TAG}-install.sh << EOF
 #!/bin/sh -xe
 
-wget https://github.com/xanderflood/pihub/releases/download/${TRAVIS_TAG}/pihub-${TRAVIS_TAG}-install.sh -o /tmp/${archive_name}
+curl -sSL https://github.com/xanderflood/pihub/releases/download/${TRAVIS_TAG}/pihub-${TRAVIS_TAG}-install.sh > /tmp/${archive_name}
 
 # TODO chec the sha
 tar -xzvf /tmp/${archive_name} ./pihub
