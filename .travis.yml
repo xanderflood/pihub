@@ -3,8 +3,7 @@ os: linux
 dist: xenial
 go:
 - 1.15
-before_deploy:
-- "./script/setup"
+before_deploy: [./script/all_artifacts]
 deploy:
   on:
     tags: true
