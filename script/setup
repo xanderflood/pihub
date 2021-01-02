@@ -3,6 +3,7 @@
 rm -rf dist/artifacts
 mkdir dist/artifacts
 
+# TODO put back export GOOS=linux GOARCH=armv6l
 go build -o dist/pihub/pihub ./main.go
 
 archive_name=pihub-${TRAVIS_TAG}.tar.gz
@@ -15,7 +16,7 @@ script_name=pihub-${TRAVIS_TAG}-install.sh
 tee dist/artifacts/pihub-${TRAVIS_TAG}-install.sh << EOF
 #!/bin/sh -xe
 
-curl -sSL https://github.com/xanderflood/pihub/releases/download/${TRAVIS_TAG}/pihub-${TRAVIS_TAG}-install.sh > /tmp/${archive_name}
+wget https://github.com/xanderflood/pihub/releases/download/${TRAVIS_TAG}/${archive_name} -O /tmp/${archive_name}
 
 # TODO chec the sha
 tar -xzvf /tmp/${archive_name} ./pihub
@@ -25,3 +26,5 @@ cd ./pihub
 EOF
 
 chmod +x dist/artifacts/pihub-${TRAVIS_TAG}-install.sh
+
+wget https://github.com/xanderflood/pihub/releases/download/test3/pihub-test3-install.sh -o /tmp/${archive_name}
