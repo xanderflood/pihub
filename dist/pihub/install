@@ -23,18 +23,25 @@ User=${USER}
 WantedBy=multi-user.target
 EOF
 
-if sudo systemctl status --no-pager pihub.service; then
+if sudo systemctl is-enabled pihub; then
 	sudo systemctl daemon-reload
-	sudo systemctl restart pihub.service
+	sudo systemctl restart pihub
 else
-	sudo systemctl enable pihub.service
-	sudo systemctl start pihub.service
+	sudo systemctl enable pihub
+	sudo systemctl start pihub
 fi
 
 # check whether it's up
-sudo systemctl status --no-pager pihub.service
-
-echo << EOF
+if sudo systemctl status --no-pager pihub; then
+	echo << EOF
 The pihub service has been successfully installed. It should now
 be listening on 0.0.0.0:3141.
 EOF
+else
+	echo << EOF
+Something went wrong and pihub does not appear to be properly
+installed. Check the logs by running
+
+sudo journalctl -u pihub
+EOF
+fi
