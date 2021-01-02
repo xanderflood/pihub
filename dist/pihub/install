@@ -12,8 +12,8 @@ Description=Pihub
 After=network.target
 
 [Service]
-ExecStart=$(pwd)/dist/pihub
-WorkingDirectory=$(pwd)/dist/pihub
+ExecStart=$(pwd)/pihub
+WorkingDirectory=$(pwd)/pihub
 StandardOutput=inherit
 StandardError=inherit
 Restart=always
