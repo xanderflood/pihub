@@ -17,7 +17,7 @@ WorkingDirectory=$(pwd)/pihub
 StandardOutput=inherit
 StandardError=inherit
 Restart=always
-User=pi
+User=${USER}
 
 [Install]
 WantedBy=multi-user.target
