@@ -13,13 +13,9 @@ import (
 	"github.com/xanderflood/pihub/pkg/htg3535ch"
 )
 
-type Blob interface{}
+type JSONHack interface{}
 
-type JSONHack struct {
-	Blob
-}
-
-func (j JSONHack) Get(path ...string) (s interface{}, ok bool) {
+func Get(ref interface{}, path ...string) (s interface{}, ok bool) {
 	defer func() {
 		if r := recover(); r != nil {
 			s = nil
@@ -27,11 +23,10 @@ func (j JSONHack) Get(path ...string) (s interface{}, ok bool) {
 		}
 	}()
 
-	return j.GetUnsafe(path...), true
+	return GetUnsafe(ref, path...), true
 }
 
-func (j JSONHack) GetUnsafe(path ...string) (s interface{}) {
-	ref := j.Blob
+func GetUnsafe(ref interface{}, path ...string) (s interface{}) {
 	for _, seg := range path {
 		ref = ref.(map[string]interface{})[seg]
 	}
@@ -106,7 +101,7 @@ func (a *ManagerAgent) InitializeModules(specs map[string]ModuleSpec) error {
 		if factory, ok := ModuleIndex[spec.Source]; ok {
 			a.Modules[name] = factory()
 			if err := a.Modules[name].Initialize(spec.Config); err != nil {
-				return errors.New("failed to initialize module") // TODO 500
+				return fmt.Errorf("failed to initialize module: %w", err)
 			}
 		} else {
 			fmt.Println("404 no such module")
@@ -118,7 +113,7 @@ func (a *ManagerAgent) Act(module string, action string, config JSONHack) (JSONH
 	if mod, ok := a.Modules[module]; ok {
 		return mod.Act(action, config)
 	}
-	return JSONHack{}, errors.New("no such module") // TODO 404
+	return nil, errors.New("no such module") // TODO 404
 }
 
 func main() {
@@ -179,7 +174,7 @@ func buildMux() *http.ServeMux {
 			return
 		}
 
-		if result, err := mgr.Act(req.Module, req.Action, JSONHack{Blob: req.Config}); err != nil {
+		if result, err := mgr.Act(req.Module, req.Action, req.Config); err != nil {
 			fmt.Println("action failed", err.Error())
 			w.WriteHeader(http.StatusInternalServerError)
 			return
@@ -193,15 +188,13 @@ func buildMux() *http.ServeMux {
 
 type EchoModule struct{}
 
-func (e *EchoModule) Initialize(j JSONHack) error {
+func (e *EchoModule) Initialize(config JSONHack) error {
 	return nil
 }
 func (e *EchoModule) Act(action string, config JSONHack) (JSONHack, error) {
-	return JSONHack{
-		Blob: map[string]interface{}{
+	return map[string]interface{}{
 			"action": action,
-			"config": config.Blob,
-		},
+			"config": config,
 	}, nil
 }
 
@@ -209,12 +202,12 @@ type RelayModule struct {
 	pin gpio.OutputPin
 }
 
-func (m *RelayModule) Initialize(j JSONHack) error {
+func (m *RelayModule) Initialize(config JSONHack) error {
 	if err := rpio.Open(); err != nil {
 		return err
 	}
 
-	s := fmt.Sprintf("%.0f", j.GetUnsafe("pin").(float64))
+	s := fmt.Sprintf("%.0f", GetUnsafe(config, "pin").(float64))
 	pin, _ := strconv.Atoi(s)
 	m.pin = rpio.Pin(uint8(pin))
 	return nil
@@ -222,14 +215,14 @@ func (m *RelayModule) Initialize(j JSONHack) error {
 func (m *RelayModule) Act(action string, config JSONHack) (JSONHack, error) {
 	switch action {
 	case "set":
-		if state, ok := config.Get("state"); ok {
+		if state, ok := Get(config, "state"); ok {
 			gpio.Set(m.pin, state.(string) == "high")
-			return JSONHack{}, nil
+			return nil, nil
 		}
 
-		return JSONHack{}, errors.New("`state` is a required field for the `set` action")
+		return nil, errors.New("`state` is a required field for the `set` action")
 	default:
-		return JSONHack{}, fmt.Errorf("no such action `%s`", action)
+		return nil, fmt.Errorf("no such action `%s`", action)
 	}
 }
 
@@ -238,14 +231,14 @@ type HTGModule struct {
 	rh htg3535ch.Humidity
 }
 
-func (m *HTGModule) Initialize(j JSONHack) error {
+func (m *HTGModule) Initialize(config JSONHack) error {
 	if err := rpio.Open(); err != nil {
 		return err
 	}
 
-	s := fmt.Sprintf("%.0f", j.GetUnsafe("temperature_adc_channel").(float64))
+	s := fmt.Sprintf("%.0f", GetUnsafe(config, "temperature_adc_channel").(float64))
 	tempCh, _ := strconv.Atoi(s)
-	s = fmt.Sprintf("%.0f", j.GetUnsafe("humidity_adc_channel").(float64))
+	s = fmt.Sprintf("%.0f", GetUnsafe(config, "humidity_adc_channel").(float64))
 	humCh, _ := strconv.Atoi(s)
 	// s = fmt.Sprintf("%.0f", j.GetUnsafe("calibration_adc_channel").(float64))
 	// calCh, _ := strconv.Atoi(s)
@@ -260,17 +253,17 @@ func (m *HTGModule) Act(action string, config JSONHack) (JSONHack, error) {
 	switch action {
 	case "rh":
 		val, err := m.rh.Read()
-		return JSONHack{Blob: val}, err
+		return val, err
 	case "tk":
 		val, err := m.tk.Read()
-		return JSONHack{Blob: val}, err
+		return val, err
 	case "tc":
 		val, err := m.tk.Read()
-		return JSONHack{Blob: val - 273.15}, err
+		return val - 273.15, err
 	case "tf":
 		val, err := m.tk.Read()
-		return JSONHack{Blob: (val-273.15)*9/5 + 32}, err
+		return (val-273.15)*9/5 + 32, err
 	default:
-		return JSONHack{}, fmt.Errorf("no such action `%s`", action)
+		return nil, fmt.Errorf("no such action `%s`", action)
 	}
 }
