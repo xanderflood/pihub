@@ -3,6 +3,9 @@ package main
 import (
 	"periph.io/x/periph/conn/i2c"
 	"periph.io/x/periph/conn/i2c/i2creg"
+	"periph.io/x/periph/conn/physic"
+	"periph.io/x/periph/experimental/conn/analog"
+	"periph.io/x/periph/experimental/devices/ads1x15"
 	"periph.io/x/periph/host"
 
 	"encoding/json"
@@ -35,6 +38,7 @@ var ModuleIndex = map[string]ModuleFactory{
 	"relay":     func() Module { return &RelayModule{} },
 	"htg3535ch": func() Module { return &HTGModule{} },
 	"i2c":       func() Module { return &I2CModule{} },
+	"ads":       func() Module { return &ADS1115Module{} },
 }
 
 func (a *ManagerAgent) InitializeModules(specs map[string]ModuleSpec) error {
@@ -281,6 +285,48 @@ func (m *I2CModule) Act(action string, config JSONHack) (JSONHack, error) {
 			"response": resp,
 		}, nil
 
+	default:
+		return nil, fmt.Errorf("no such action `%s`", action)
+	}
+}
+
+type ADS1115Module struct {
+	ads *ads1x15.Dev
+	pin analog.PinADC
+
+	latestVoltage float64
+}
+
+func (m *ADS1115Module) Initialize(sp ServiceProvider, config JSONHack) error {
+	s := fmt.Sprintf("%.0f", GetUnsafe(config, "address").(float64))
+	addr, _ := strconv.Atoi(s)
+	bus, err := sp.GetI2CDevice(uint16(addr))
+	if err != nil {
+		return fmt.Errorf("failed getting i2c device: %w", err)
+	}
+
+	// TODO: this breaks isolation big time
+	m.ads, err = ads1x15.NewADS1115(bus.(*i2c.Dev).Bus, &ads1x15.DefaultOpts)
+	if err != nil {
+		return fmt.Errorf("failed initializing ADS1115 device: %w", err)
+	}
+
+	// TODO make the channel configurable
+	m.pin, err = m.ads.PinForChannel(ads1x15.Channel0, 5*physic.Volt, 1*physic.Hertz, ads1x15.SaveEnergy)
+	if err != nil {
+		return fmt.Errorf("failed initializing ADS1115 device: %w", err)
+	}
+
+	// TODO add a destroy hook for old modules that are being replaced
+	// defer m.pin.Halt()
+
+	return nil
+}
+func (m *ADS1115Module) Act(action string, config JSONHack) (JSONHack, error) {
+	switch action {
+	case "rh":
+		val, err := m.pin.Read()
+		return val, err
 	default:
 		return nil, fmt.Errorf("no such action `%s`", action)
 	}
