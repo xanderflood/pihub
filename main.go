@@ -400,7 +400,7 @@ type ServiceProvider interface {
 }
 
 func NewServiceProvider() (*ServiceAgent, error) {
-	// TODO switch this over to periph.io? don't hurry though
+	// TODO switch this over to periph.io
 	if err := gpio.Setup(); err != nil {
 		fmt.Println("failed to identify a gpio bus - modules relying on gpio will fail to initialize: ", err.Error())
 	}
