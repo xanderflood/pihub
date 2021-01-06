@@ -1,0 +1,9 @@
+#!/bin/sh -xe
+
+rm -rf dist/artifacts
+mkdir dist/artifacts
+
+for arch in amd64 arm
+do
+	GOOS=linux GOARCH=$arch ./script/platform_artifacts
+done
