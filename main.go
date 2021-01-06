@@ -351,12 +351,13 @@ func (m *HTGModule) Initialize(sp ServiceProvider, config JSONHack) error {
 	tempCh, _ := strconv.Atoi(s)
 	s = fmt.Sprintf("%.0f", GetUnsafe(config, "humidity_adc_channel").(float64))
 	humCh, _ := strconv.Atoi(s)
-	// s = fmt.Sprintf("%.0f", j.GetUnsafe("calibration_adc_channel").(float64))
-	// calCh, _ := strconv.Atoi(s)
+	if calCh, ok := Get(config, "calibration_adc_channel"); ok {
+		calCh, _ := strconv.Atoi(fmt.Sprintf("%.0f", calCh.(float64)))
+		m.tk = htg3535ch.NewCalibrationTemperatureK(tempCh, calCh)
+	} else {
+		m.tk = htg3535ch.NewDefaultTemperatureK(tempCh)
+	}
 
-	// TODO if this provides reasonable values, fix the calibration wiring and try
-	// using NewCalibrationTemperatureK again
-	m.tk = htg3535ch.NewDefaultTemperatureK(tempCh)
 	m.rh = htg3535ch.NewHumidity(humCh)
 	return nil
 }
