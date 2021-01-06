@@ -22,8 +22,11 @@ import (
 ////////////////////////
 // The module runtime //
 type Module interface {
+	// TODO documentation endpoint
+
 	Initialize(p ServiceProvider, j JSONHack) error
 	Act(action string, config JSONHack) (JSONHack, error)
+	Stop() error
 }
 
 type Manager interface {
@@ -202,6 +205,8 @@ func buildMux() *http.ServeMux {
 // The module library //
 type EchoModule struct{}
 
+func (*EchoModule) Stop() error { return nil }
+
 func (e *EchoModule) Initialize(sp ServiceProvider, config JSONHack) error {
 	return nil
 }
@@ -215,6 +220,8 @@ func (e *EchoModule) Act(action string, config JSONHack) (JSONHack, error) {
 type RelayModule struct {
 	pin gpio.OutputPin
 }
+
+func (*RelayModule) Stop() error { return nil }
 
 func (m *RelayModule) Initialize(sp ServiceProvider, config JSONHack) error {
 	s := fmt.Sprintf("%.0f", GetUnsafe(config, "pin").(float64))
@@ -242,12 +249,15 @@ type I2CModule struct {
 	dvc I2CDevice
 }
 
+func (*I2CModule) Stop() error { return nil }
+
 func (m *I2CModule) Initialize(sp ServiceProvider, config JSONHack) error {
 	s := fmt.Sprintf("%.0f", GetUnsafe(config, "address").(float64))
 	addr, _ := strconv.Atoi(s)
 
 	var err error
-	m.dvc, err = sp.GetI2CDevice(uint16(addr))
+	bus, err := sp.GetDefaultI2CBus()
+	m.dvc = &i2c.Dev{Bus: bus, Addr: uint16(addr)}
 	if err != nil {
 		return fmt.Errorf("failed getting i2c device: %w", err)
 	}
@@ -293,38 +303,35 @@ func (m *I2CModule) Act(action string, config JSONHack) (JSONHack, error) {
 type ADS1115Module struct {
 	ads *ads1x15.Dev
 	pin analog.PinADC
+}
 
-	latestVoltage float64
+func (m *ADS1115Module) Stop() error {
+	return m.pin.Halt()
 }
 
 func (m *ADS1115Module) Initialize(sp ServiceProvider, config JSONHack) error {
-	s := fmt.Sprintf("%.0f", GetUnsafe(config, "address").(float64))
-	addr, _ := strconv.Atoi(s)
-	bus, err := sp.GetI2CDevice(uint16(addr))
+	bus, err := sp.GetDefaultI2CBus()
 	if err != nil {
 		return fmt.Errorf("failed getting i2c device: %w", err)
 	}
 
-	// TODO: this breaks isolation big time
-	m.ads, err = ads1x15.NewADS1115(bus.(*i2c.Dev).Bus, &ads1x15.DefaultOpts)
+	m.ads, err = ads1x15.NewADS1115(bus, &ads1x15.DefaultOpts)
 	if err != nil {
 		return fmt.Errorf("failed initializing ADS1115 device: %w", err)
 	}
+	s := fmt.Sprintf("%.0f", GetUnsafe(config, "channel_mask").(float64))
+	ch, _ := strconv.Atoi(s)
 
-	// TODO make the channel configurable
-	m.pin, err = m.ads.PinForChannel(ads1x15.Channel0, 5*physic.Volt, 1*physic.Hertz, ads1x15.SaveEnergy)
+	m.pin, err = m.ads.PinForChannel(ads1x15.Channel(ch), 5*physic.Volt, 1*physic.Hertz, ads1x15.SaveEnergy)
 	if err != nil {
 		return fmt.Errorf("failed initializing ADS1115 device: %w", err)
 	}
-
-	// TODO add a destroy hook for old modules that are being replaced
-	// defer m.pin.Halt()
 
 	return nil
 }
 func (m *ADS1115Module) Act(action string, config JSONHack) (JSONHack, error) {
 	switch action {
-	case "rh":
+	case "read":
 		val, err := m.pin.Read()
 		return val, err
 	default:
@@ -336,6 +343,8 @@ type HTGModule struct {
 	tk htg3535ch.TemperatureK
 	rh htg3535ch.Humidity
 }
+
+func (*HTGModule) Stop() error { return nil }
 
 func (m *HTGModule) Initialize(sp ServiceProvider, config JSONHack) error {
 	s := fmt.Sprintf("%.0f", GetUnsafe(config, "temperature_adc_channel").(float64))
@@ -377,44 +386,44 @@ type I2CDevice interface {
 }
 type ServiceProvider interface {
 	GetGPIOPin(p uint8) (gpio.Pin, error)
-	GetI2CDevice(addr uint16) (I2CDevice, error)
+	GetDefaultI2CBus() (i2c.BusCloser, error)
 
 	Close() error
 }
-type ServiceAgent struct {
-	gpioInitted bool
-	i2c         i2c.BusCloser
-}
 
-func (a *ServiceAgent) GetGPIOPin(p uint8) (gpio.Pin, error) {
+func NewServiceProvider() (*ServiceAgent, error) {
 	// TODO switch this over to periph.io? don't hurry though
-	if !a.gpioInitted {
-		if err := gpio.Setup(); err != nil {
-			return nil, err
-		}
+	if err := gpio.Setup(); err != nil {
+		fmt.Println("failed to identify a gpio bus - modules relying on gpio will fail to initialize: ", err.Error())
 	}
 
-	return gpio.PinRef(p), nil
-}
-func (a *ServiceAgent) GetI2CDevice(addr uint16) (I2CDevice, error) {
-	// TODO move this to NewServiceProvider
-	if _, err := host.Init(); err != nil {
+	_, err := host.Init()
+	if err != nil {
 		fmt.Println("failed initializing perph.io host", err.Error())
 		return nil, err
 	}
 
-	if a.i2c == nil {
-		b, err := i2creg.Open("")
-		if err != nil {
-			fmt.Println("failed opening i2c bus", err.Error())
-			return nil, err
-		}
-
-		a.i2c = b
+	bus, err := i2creg.Open("")
+	if err != nil {
+		fmt.Println("failed to identify an i2c bus - modules relying on I2C will fail to initialize: ", err.Error())
 	}
 
-	return &i2c.Dev{Bus: a.i2c, Addr: addr}, nil
+	return &ServiceAgent{
+		defaultI2CBus: bus,
+	}, nil
+}
+
+type ServiceAgent struct {
+	defaultI2CBus i2c.BusCloser
+}
+
+func (a *ServiceAgent) GetGPIOPin(p uint8) (gpio.Pin, error) {
+
+	return gpio.PinRef(p), nil
+}
+func (a *ServiceAgent) GetDefaultI2CBus() (i2c.BusCloser, error) {
+	return a.defaultI2CBus, nil
 }
 func (a *ServiceAgent) Close() error {
-	return a.i2c.Close()
+	return a.defaultI2CBus.Close()
 }
