@@ -11,6 +11,8 @@ import (
 //State IO pin state
 type State = rpio.State
 
+type PinRef = rpio.Pin
+
 //States state names
 var States = map[State]string{
 	Low:  "low",
@@ -25,6 +27,9 @@ const (
 	High = rpio.High
 )
 
+//Setup initialize memory buffers for GPIO
+var Setup = rpio.Open
+
 //ParseState parse a state from a string
 func ParseState(s string) (State, error) {
 	if strings.ToLower(s) == States[Low] {
@@ -33,11 +38,6 @@ func ParseState(s string) (State, error) {
 		return High, nil
 	}
 	return State(0), fmt.Errorf("unexpected string %s, expected HIGH or LOW", s)
-}
-
-//Setup initialize memory buffers for GPIO
-func Setup() error {
-	return rpio.Open()
 }
 
 //OutputPin minimal interface for a GPIO pin
