@@ -1,6 +1,8 @@
 package main
 
 import (
+	"log"
+
 	"periph.io/x/periph/conn/i2c"
 	"periph.io/x/periph/conn/i2c/i2creg"
 	"periph.io/x/periph/conn/physic"
@@ -147,9 +149,14 @@ func main() {
 }
 
 func buildMux() *http.ServeMux {
+	sp, err := NewServiceProvider()
+	if err != nil {
+		log.Fatal("failed initializing service provider")
+	}
+
 	mgr := &ManagerAgent{
 		Modules:         map[string]Module{},
-		ServiceProvider: &ServiceAgent{},
+		ServiceProvider: sp,
 	}
 
 	mux := http.NewServeMux()
