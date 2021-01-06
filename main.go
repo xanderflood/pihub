@@ -1,6 +1,8 @@
 package main
 
 import (
+	"log"
+
 	"periph.io/x/periph/conn/i2c"
 	"periph.io/x/periph/conn/i2c/i2creg"
 	"periph.io/x/periph/conn/physic"
@@ -147,9 +149,14 @@ func main() {
 }
 
 func buildMux() *http.ServeMux {
+	sp, err := NewServiceProvider()
+	if err != nil {
+		log.Fatal("failed initializing service provider")
+	}
+
 	mgr := &ManagerAgent{
 		Modules:         map[string]Module{},
-		ServiceProvider: &ServiceAgent{},
+		ServiceProvider: sp,
 	}
 
 	mux := http.NewServeMux()
@@ -351,7 +358,7 @@ func (m *HTGModule) Initialize(sp ServiceProvider, config JSONHack) error {
 	tempCh, _ := strconv.Atoi(s)
 	s = fmt.Sprintf("%.0f", GetUnsafe(config, "humidity_adc_channel").(float64))
 	humCh, _ := strconv.Atoi(s)
-	if calCh, ok := Get(config, "calibration_adc_channel"); ok {
+	if calCh, ok := Get(config, "calibration_adc_channel"); ok && calCh != nil {
 		calCh, _ := strconv.Atoi(fmt.Sprintf("%.0f", calCh.(float64)))
 		m.tk = htg3535ch.NewCalibrationTemperatureK(tempCh, calCh)
 	} else {
@@ -393,7 +400,7 @@ type ServiceProvider interface {
 }
 
 func NewServiceProvider() (*ServiceAgent, error) {
-	// TODO switch this over to periph.io? don't hurry though
+	// TODO switch this over to periph.io
 	if err := gpio.Setup(); err != nil {
 		fmt.Println("failed to identify a gpio bus - modules relying on gpio will fail to initialize: ", err.Error())
 	}
