@@ -17,6 +17,7 @@ import (
 	"net/http/httputil"
 	"strconv"
 
+	// TODO eliminate both of these
 	"github.com/xanderflood/pihub/pkg/gpio"
 	"github.com/xanderflood/pihub/pkg/htg3535ch"
 )
@@ -25,15 +26,28 @@ import (
 // The module runtime //
 type Module interface {
 	// TODO documentation endpoint
+	// TODO swagger docs?
 
+	Explain() *ModuleExplanation
 	Initialize(p ServiceProvider, j JSONHack) error
 	Act(action string, config JSONHack) (JSONHack, error)
+
+	// TODO after the ServiceProvider is built out, this should be unnecessary
 	Stop() error
 }
 
-type Manager interface {
-	InitializeModules(specs map[string]ModuleSpec) error
-	Act(module string, action string, config JSONHack) (JSONHack, error)
+type ModuleExplanation struct {
+	ShortDescription string                       `json:"short_description"`
+	Description      string                       `json:"description"`
+	Configuration    JSONHack                     `json:"configuration"`
+	Actions          map[string]ActionExplanation `json:"actions"`
+}
+
+type ActionExplanation struct {
+	ShortDescription string   `json:"short_description"`
+	Description      string   `json:"description"`
+	Argument         JSONHack `json:"argument"`
+	Result           JSONHack `json:"result"`
 }
 
 type ModuleFactory func() Module
@@ -62,6 +76,12 @@ func (a *ManagerAgent) InitializeModules(specs map[string]ModuleSpec) error {
 func (a *ManagerAgent) Act(module string, action string, config JSONHack) (JSONHack, error) {
 	if mod, ok := a.Modules[module]; ok {
 		return mod.Act(action, config)
+	}
+	return nil, errors.New("no such module") // TODO 404
+}
+func (a *ManagerAgent) Explain(module string) (*ModuleExplanation, error) {
+	if mod, ok := a.Modules[module]; ok {
+		return mod.Explain(), nil
 	}
 	return nil, errors.New("no such module") // TODO 404
 }
@@ -100,20 +120,6 @@ type InitializeResponse struct {
 	NumModules int `json:"num_modules"`
 }
 
-type GetStateRequest struct {
-	Module string   `json:"module"`
-	Path   []string `json:"path"`
-}
-type GetStateResponse struct {
-	Value JSONHack `json:"num_modules"`
-}
-
-type SetStateRequest struct {
-	Module string   `json:"module"`
-	Path   []string `json:"path"`
-	Value  JSONHack `json:"num_modules"`
-}
-
 type ActRequest struct {
 	Module string      `json:"module"`
 	Action string      `json:"action"`
@@ -126,10 +132,6 @@ type ActResponse struct {
 type ManagerAgent struct {
 	Modules         map[string]Module
 	ServiceProvider ServiceProvider
-}
-
-type ErrorResponse struct {
-	Message string `json:"message"`
 }
 
 func main() {
@@ -180,8 +182,6 @@ func buildMux() *http.ServeMux {
 		}
 
 		json.NewEncoder(w).Encode(InitializeResponse{NumModules: len(mgr.Modules)})
-
-		return
 	}))
 	mux.Handle("/act", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {
@@ -214,6 +214,13 @@ type EchoModule struct{}
 
 func (*EchoModule) Stop() error { return nil }
 
+func (*EchoModule) Explain() *ModuleExplanation {
+	return &ModuleExplanation{
+		ShortDescription: "a module that simplies echoes back the request body",
+		Description: `
+`,
+	}
+}
 func (e *EchoModule) Initialize(sp ServiceProvider, config JSONHack) error {
 	return nil
 }
@@ -230,6 +237,19 @@ type RelayModule struct {
 
 func (*RelayModule) Stop() error { return nil }
 
+func (m *RelayModule) Explain() *ModuleExplanation {
+	return &ModuleExplanation{
+		ShortDescription: "control a single GPIO pin",
+		Configuration: map[string]interface{}{
+			"pin": "number",
+		},
+		Actions: map[string]ActionExplanation{
+			"set": {
+				ShortDescription: "set the boolean value of the pin",
+			},
+		},
+	}
+}
 func (m *RelayModule) Initialize(sp ServiceProvider, config JSONHack) error {
 	s := fmt.Sprintf("%.0f", GetUnsafe(config, "pin").(float64))
 	pin, _ := strconv.Atoi(s)
@@ -258,6 +278,19 @@ type I2CModule struct {
 
 func (*I2CModule) Stop() error { return nil }
 
+func (m *I2CModule) Explain() *ModuleExplanation {
+	return &ModuleExplanation{
+		ShortDescription: "control a single GPIO pin",
+		Configuration: map[string]interface{}{
+			"address": "number",
+		},
+		Actions: map[string]ActionExplanation{
+			"transact;": {
+				ShortDescription: "send a TODO",
+			},
+		},
+	}
+}
 func (m *I2CModule) Initialize(sp ServiceProvider, config JSONHack) error {
 	s := fmt.Sprintf("%.0f", GetUnsafe(config, "address").(float64))
 	addr, _ := strconv.Atoi(s)
@@ -316,6 +349,21 @@ func (m *ADS1115Module) Stop() error {
 	return m.pin.Halt()
 }
 
+func (m *ADS1115Module) Explain() *ModuleExplanation {
+	return &ModuleExplanation{
+		ShortDescription: "control an ADS1115 analog-digital converter",
+		Configuration: map[string]interface{}{
+			"address": "number",
+		},
+		Actions: map[string]ActionExplanation{
+			"read": {
+				Result: map[string]interface{}{
+					// "TODO"
+				},
+			},
+		},
+	}
+}
 func (m *ADS1115Module) Initialize(sp ServiceProvider, config JSONHack) error {
 	bus, err := sp.GetDefaultI2CBus()
 	if err != nil {
@@ -339,6 +387,7 @@ func (m *ADS1115Module) Initialize(sp ServiceProvider, config JSONHack) error {
 func (m *ADS1115Module) Act(action string, config JSONHack) (JSONHack, error) {
 	switch action {
 	case "read":
+		// TODO build an object that has a clearly named voltage floating point
 		val, err := m.pin.Read()
 		return val, err
 	default:
@@ -347,25 +396,61 @@ func (m *ADS1115Module) Act(action string, config JSONHack) (JSONHack, error) {
 }
 
 type HTGModule struct {
+	humidity    analog.PinADC
+	temperature analog.PinADC
+
 	tk htg3535ch.TemperatureK
 	rh htg3535ch.Humidity
 }
 
-func (*HTGModule) Stop() error { return nil }
+func (m *HTGModule) Explain() *ModuleExplanation {
+	return &ModuleExplanation{
+		ShortDescription: "control an HTG3535ch temperature/humidity sensor",
+		Configuration: map[string]interface{}{
+			"address": "number",
+		},
+		Actions: map[string]ActionExplanation{
+			"read": {
+				Result: map[string]interface{}{
+					// "TODO"
+				},
+			},
+		},
+	}
+}
+
+func (m *HTGModule) Stop() error {
+	m.humidity.Halt()
+	return m.temperature.Halt()
+}
 
 func (m *HTGModule) Initialize(sp ServiceProvider, config JSONHack) error {
-	s := fmt.Sprintf("%.0f", GetUnsafe(config, "temperature_adc_channel").(float64))
-	tempCh, _ := strconv.Atoi(s)
-	s = fmt.Sprintf("%.0f", GetUnsafe(config, "humidity_adc_channel").(float64))
-	humCh, _ := strconv.Atoi(s)
-	if calCh, ok := Get(config, "calibration_adc_channel"); ok && calCh != nil {
-		calCh, _ := strconv.Atoi(fmt.Sprintf("%.0f", calCh.(float64)))
-		m.tk = htg3535ch.NewCalibrationTemperatureK(tempCh, calCh)
-	} else {
-		m.tk = htg3535ch.NewDefaultTemperatureK(tempCh)
+	bus, err := sp.GetDefaultI2CBus()
+	if err != nil {
+		return fmt.Errorf("failed getting i2c device: %w", err)
 	}
 
-	m.rh = htg3535ch.NewHumidity(humCh)
+	ads, err := ads1x15.NewADS1115(bus, &ads1x15.DefaultOpts)
+	if err != nil {
+		return fmt.Errorf("failed initializing ADS1115 device: %w", err)
+	}
+
+	s := fmt.Sprintf("%.0f", GetUnsafe(config, "temperature_adc_channel").(float64))
+	tempCh, _ := strconv.Atoi(s)
+	m.temperature, err = ads.PinForChannel(ads1x15.Channel(tempCh), 5*physic.Volt, 1*physic.Hertz, ads1x15.SaveEnergy)
+	if err != nil {
+		return fmt.Errorf("failed initializing ADS1115 device: %w", err)
+	}
+	m.tk = htg3535ch.NewDefaultTemperatureK(m.temperature)
+
+	s = fmt.Sprintf("%.0f", GetUnsafe(config, "humidity_adc_channel").(float64))
+	humCh, _ := strconv.Atoi(s)
+	m.humidity, err = ads.PinForChannel(ads1x15.Channel(humCh), 5*physic.Volt, 1*physic.Hertz, ads1x15.SaveEnergy)
+	if err != nil {
+		return fmt.Errorf("failed initializing ADS1115 device: %w", err)
+	}
+	m.rh = htg3535ch.NewHumidity(m.humidity)
+
 	return nil
 }
 func (m *HTGModule) Act(action string, config JSONHack) (JSONHack, error) {
