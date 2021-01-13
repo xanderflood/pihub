@@ -3,32 +3,33 @@ package htg3535ch
 import (
 	"math"
 
-	"github.com/xanderflood/pihub/pkg/ads1115"
+	"periph.io/x/periph/conn/physic"
+	"periph.io/x/periph/experimental/conn/analog"
 )
 
 // based on https://www.te.com/commerce/DocumentDelivery/DDEController?Action=showdoc&DocId=Data+Sheet%7FHPC123_K%7FA1%7Fpdf%7FEnglish%7FENG_DS_HPC123_K_A1.pdf%7FCAT-HSMM0001
 
 //TemperatureK represents the HTG pin for measure temperature in Kelvins
 type TemperatureK struct {
-	TempADS             ads1115.ADS1115
+	TempADS             analog.PinADC
 	BatchResistanceOhms float64
-	VCCVolts            func() (float64, error)
+	VCCVolts            analog.PinADC
 }
 
 //NewDefaultTemperatureK creates a new TemperatureK with default wiring configuration
-func NewDefaultTemperatureK(tPin int) TemperatureK {
-	return NewTemperatureK(tPin, 10000.0, func() (float64, error) { return 5.0, nil })
+func NewDefaultTemperatureK(pin analog.PinADC) TemperatureK {
+	return NewTemperatureK(pin, 10000.0, nil)
 }
 
 //NewCalibrationTemperatureK creates a new TemperatureK with default wiring configuration
-func NewCalibrationTemperatureK(tPin, vccPin int) TemperatureK {
-	return NewTemperatureK(tPin, 10000.0, ads1115.New(vccPin).ReadVoltage)
+func NewCalibrationTemperatureK(tPin, vccPin analog.PinADC) TemperatureK {
+	return NewTemperatureK(tPin, 10000.0, vccPin)
 }
 
 //NewTemperatureK creates a new TemperatureK with default wiring configuration
-func NewTemperatureK(tPin int, batchResistanceOhms float64, vccVolts func() (float64, error)) TemperatureK {
+func NewTemperatureK(tPin analog.PinADC, batchResistanceOhms float64, vccVolts analog.PinADC) TemperatureK {
 	return TemperatureK{
-		TempADS:             ads1115.New(tPin),
+		TempADS:             tPin,
 		BatchResistanceOhms: batchResistanceOhms,
 		VCCVolts:            vccVolts,
 	}
@@ -37,14 +38,21 @@ func NewTemperatureK(tPin int, batchResistanceOhms float64, vccVolts func() (flo
 //Read takes a reading from the underlying ADS1115 and converts the voltage
 //value to a temperature reading in Kelvins.
 func (s TemperatureK) Read() (float64, error) {
-	v, err := s.TempADS.ReadVoltage()
+	sample, err := s.TempADS.Read()
 	if err != nil {
 		return 0, err
 	}
+	v := float64(sample.V) / float64(physic.Volt)
 
-	vcc, err := s.VCCVolts()
-	if err != nil {
-		return 0, err
+	var vcc float64
+	if s.VCCVolts != nil {
+		sample, err = s.VCCVolts.Read()
+		if err != nil {
+			return 0, err
+		}
+		vcc = float64(sample.V) / float64(physic.Volt)
+	} else {
+		vcc = 5.0
 	}
 
 	ntcResistanceOhms := s.BatchResistanceOhms * v / (vcc - v)
@@ -55,23 +63,24 @@ func (s TemperatureK) Read() (float64, error) {
 
 //Humidity represents the HTG pin for measure relative humidity in percent
 type Humidity struct {
-	ads1115.ADS1115
+	analog.PinADC
 }
 
 //NewHumidity creates a new Humidity
-func NewHumidity(pin int) Humidity {
+func NewHumidity(pin analog.PinADC) Humidity {
 	return Humidity{
-		ADS1115: ads1115.New(pin),
+		PinADC: pin,
 	}
 }
 
 //Read takes a reading from the underlying ADS1115 and converts the voltage
 //value to a relative humidity reading in percent.
 func (s Humidity) Read() (float64, error) {
-	v, err := s.ADS1115.ReadVoltage()
+	sample, err := s.PinADC.Read()
 	if err != nil {
 		return 0, err
 	}
+	v := float64(sample.V) / float64(physic.Volt)
 
 	return -1.564*v*v*v + 12.05*v*v + 8.22*v - 15.6, nil
 }
