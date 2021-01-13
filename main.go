@@ -3,6 +3,8 @@ package main
 import (
 	"log"
 
+	"periph.io/x/periph/conn/gpio"
+	"periph.io/x/periph/conn/gpio/gpioreg"
 	"periph.io/x/periph/conn/i2c"
 	"periph.io/x/periph/conn/i2c/i2creg"
 	"periph.io/x/periph/conn/physic"
@@ -17,37 +19,16 @@ import (
 	"net/http/httputil"
 	"strconv"
 
-	// TODO eliminate both of these
-	"github.com/xanderflood/pihub/pkg/gpio"
 	"github.com/xanderflood/pihub/pkg/htg3535ch"
 )
 
 ////////////////////////
 // The module runtime //
 type Module interface {
-	// TODO documentation endpoint
-	// TODO swagger docs?
-
-	Explain() *ModuleExplanation
 	Initialize(p ServiceProvider, j JSONHack) error
 	Act(action string, config JSONHack) (JSONHack, error)
 
-	// TODO after the ServiceProvider is built out, this should be unnecessary
 	Stop() error
-}
-
-type ModuleExplanation struct {
-	ShortDescription string                       `json:"short_description"`
-	Description      string                       `json:"description"`
-	Configuration    JSONHack                     `json:"configuration"`
-	Actions          map[string]ActionExplanation `json:"actions"`
-}
-
-type ActionExplanation struct {
-	ShortDescription string   `json:"short_description"`
-	Description      string   `json:"description"`
-	Argument         JSONHack `json:"argument"`
-	Result           JSONHack `json:"result"`
 }
 
 type ModuleFactory func() Module
@@ -76,12 +57,6 @@ func (a *ManagerAgent) InitializeModules(specs map[string]ModuleSpec) error {
 func (a *ManagerAgent) Act(module string, action string, config JSONHack) (JSONHack, error) {
 	if mod, ok := a.Modules[module]; ok {
 		return mod.Act(action, config)
-	}
-	return nil, errors.New("no such module") // TODO 404
-}
-func (a *ManagerAgent) Explain(module string) (*ModuleExplanation, error) {
-	if mod, ok := a.Modules[module]; ok {
-		return mod.Explain(), nil
 	}
 	return nil, errors.New("no such module") // TODO 404
 }
@@ -137,7 +112,7 @@ type ManagerAgent struct {
 func main() {
 	router := buildMux()
 
-	http.ListenAndServe("0.0.0.0:3141", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	_ = http.ListenAndServe("0.0.0.0:3141", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if bs, err := httputil.DumpRequest(r, true); err != nil {
 			fmt.Println("failed dumping request -- aborting", err.Error())
 			return
@@ -181,7 +156,10 @@ func buildMux() *http.ServeMux {
 			return
 		}
 
-		json.NewEncoder(w).Encode(InitializeResponse{NumModules: len(mgr.Modules)})
+		if err := json.NewEncoder(w).Encode(InitializeResponse{NumModules: len(mgr.Modules)}); err != nil {
+			fmt.Println("failed sending response", err.Error())
+			return
+		}
 	}))
 	mux.Handle("/act", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {
@@ -201,7 +179,10 @@ func buildMux() *http.ServeMux {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		} else {
-			json.NewEncoder(w).Encode(ActResponse{Result: result})
+			if err := json.NewEncoder(w).Encode(ActResponse{Result: result}); err != nil {
+				fmt.Println("failed sending response", err.Error())
+				return
+			}
 		}
 	}))
 
@@ -214,13 +195,6 @@ type EchoModule struct{}
 
 func (*EchoModule) Stop() error { return nil }
 
-func (*EchoModule) Explain() *ModuleExplanation {
-	return &ModuleExplanation{
-		ShortDescription: "a module that simplies echoes back the request body",
-		Description: `
-`,
-	}
-}
 func (e *EchoModule) Initialize(sp ServiceProvider, config JSONHack) error {
 	return nil
 }
@@ -232,37 +206,32 @@ func (e *EchoModule) Act(action string, config JSONHack) (JSONHack, error) {
 }
 
 type RelayModule struct {
-	pin gpio.OutputPin
+	// pin gpio.OutputPin
+	pin gpio.PinOut
 }
 
 func (*RelayModule) Stop() error { return nil }
 
-func (m *RelayModule) Explain() *ModuleExplanation {
-	return &ModuleExplanation{
-		ShortDescription: "control a single GPIO pin",
-		Configuration: map[string]interface{}{
-			"pin": "number",
-		},
-		Actions: map[string]ActionExplanation{
-			"set": {
-				ShortDescription: "set the boolean value of the pin",
-			},
-		},
-	}
-}
 func (m *RelayModule) Initialize(sp ServiceProvider, config JSONHack) error {
-	s := fmt.Sprintf("%.0f", GetUnsafe(config, "pin").(float64))
-	pin, _ := strconv.Atoi(s)
+	pinString := fmt.Sprintf("%.0f", GetUnsafe(config, "pin").(float64))
 
-	var err error
-	m.pin, err = sp.GetGPIOPin(uint8(pin))
-	return err
+	// Use gpioreg GPIO pin registry to find a GPIO pin by name.
+	pin := gpioreg.ByName(pinString)
+	if pin == nil {
+		return errors.New("Failed to find pin")
+	}
+	if err := pin.Out(gpio.Low); err != nil {
+		return err
+	}
+	m.pin = pin
+
+	return nil
 }
 func (m *RelayModule) Act(action string, config JSONHack) (JSONHack, error) {
 	switch action {
 	case "set":
 		if state, ok := Get(config, "state"); ok {
-			gpio.Set(m.pin, state.(string) == "high")
+			_ = m.pin.Out(gpio.Level(state.(string) == "high"))
 			return nil, nil
 		}
 
@@ -278,19 +247,6 @@ type I2CModule struct {
 
 func (*I2CModule) Stop() error { return nil }
 
-func (m *I2CModule) Explain() *ModuleExplanation {
-	return &ModuleExplanation{
-		ShortDescription: "control a single GPIO pin",
-		Configuration: map[string]interface{}{
-			"address": "number",
-		},
-		Actions: map[string]ActionExplanation{
-			"transact;": {
-				ShortDescription: "send a TODO",
-			},
-		},
-	}
-}
 func (m *I2CModule) Initialize(sp ServiceProvider, config JSONHack) error {
 	s := fmt.Sprintf("%.0f", GetUnsafe(config, "address").(float64))
 	addr, _ := strconv.Atoi(s)
@@ -349,21 +305,6 @@ func (m *ADS1115Module) Stop() error {
 	return m.pin.Halt()
 }
 
-func (m *ADS1115Module) Explain() *ModuleExplanation {
-	return &ModuleExplanation{
-		ShortDescription: "control an ADS1115 analog-digital converter",
-		Configuration: map[string]interface{}{
-			"address": "number",
-		},
-		Actions: map[string]ActionExplanation{
-			"read": {
-				Result: map[string]interface{}{
-					// "TODO"
-				},
-			},
-		},
-	}
-}
 func (m *ADS1115Module) Initialize(sp ServiceProvider, config JSONHack) error {
 	bus, err := sp.GetDefaultI2CBus()
 	if err != nil {
@@ -387,9 +328,8 @@ func (m *ADS1115Module) Initialize(sp ServiceProvider, config JSONHack) error {
 func (m *ADS1115Module) Act(action string, config JSONHack) (JSONHack, error) {
 	switch action {
 	case "read":
-		// TODO build an object that has a clearly named voltage floating point
-		val, err := m.pin.Read()
-		return val, err
+		sample, err := m.pin.Read()
+		return float64(sample.V) / float64(physic.Volt), err
 	default:
 		return nil, fmt.Errorf("no such action `%s`", action)
 	}
@@ -403,24 +343,8 @@ type HTGModule struct {
 	rh htg3535ch.Humidity
 }
 
-func (m *HTGModule) Explain() *ModuleExplanation {
-	return &ModuleExplanation{
-		ShortDescription: "control an HTG3535ch temperature/humidity sensor",
-		Configuration: map[string]interface{}{
-			"address": "number",
-		},
-		Actions: map[string]ActionExplanation{
-			"read": {
-				Result: map[string]interface{}{
-					// "TODO"
-				},
-			},
-		},
-	}
-}
-
 func (m *HTGModule) Stop() error {
-	m.humidity.Halt()
+	_ = m.humidity.Halt()
 	return m.temperature.Halt()
 }
 
@@ -478,18 +402,13 @@ type I2CDevice interface {
 	Tx(w, r []byte) error
 }
 type ServiceProvider interface {
-	GetGPIOPin(p uint8) (gpio.Pin, error)
+	GetGPIOByName(name string) (gpio.PinIO, error)
 	GetDefaultI2CBus() (i2c.BusCloser, error)
 
 	Close() error
 }
 
 func NewServiceProvider() (*ServiceAgent, error) {
-	// TODO switch this over to periph.io
-	if err := gpio.Setup(); err != nil {
-		fmt.Println("failed to identify a gpio bus - modules relying on gpio will fail to initialize: ", err.Error())
-	}
-
 	_, err := host.Init()
 	if err != nil {
 		fmt.Println("failed initializing perph.io host", err.Error())
@@ -510,12 +429,11 @@ type ServiceAgent struct {
 	defaultI2CBus i2c.BusCloser
 }
 
-func (a *ServiceAgent) GetGPIOPin(p uint8) (gpio.Pin, error) {
-
-	return gpio.PinRef(p), nil
-}
 func (a *ServiceAgent) GetDefaultI2CBus() (i2c.BusCloser, error) {
 	return a.defaultI2CBus, nil
+}
+func (a *ServiceAgent) GetGPIOByName(name string) (gpio.PinIO, error) {
+	return gpioreg.ByName(name), nil
 }
 func (a *ServiceAgent) Close() error {
 	return a.defaultI2CBus.Close()
