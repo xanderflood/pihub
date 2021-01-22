@@ -1,6 +1,6 @@
 #!/bin/sh -xe
 
-go build -o dist/pihub/pihub ./main.go
+go build -o dist/pihub/pihub ./
 
 archive_name=pihub-${TRAVIS_TAG}-${GOOS}-${GOARCH}.tar.gz
 archive_path=dist/artifacts/${archive_name}
