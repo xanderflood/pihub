@@ -169,14 +169,34 @@ func buildMux() *http.ServeMux {
 			return
 		}
 
-		harness := &JSONBinder{requestBody: bytes.NewBuffer([]byte(req.Config))}
-		if result, err := mgr.Act(req.Module, req.Action, harness); err != nil {
-			fmt.Println("action failed", err.Error())
+		actRequest := &JSONBinder{requestBody: bytes.NewBuffer([]byte(req.Config))}
+		if result, err := mgr.Act(req.Module, req.Action, actRequest); err != nil {
+
+			// errors that passed through the JSONBinder will be marked so we can
+			// respond with a 400 instead.
+			var iErr InputError
+			if errors.As(err, &iErr) {
+				w.WriteHeader(http.StatusBadRequest)
+				if wErr := json.NewEncoder(w).Encode(map[string]interface{}{
+					"mesage": fmt.Sprintf("invalid request: %s", err.Error()),
+				}); wErr != nil {
+					fmt.Println("failed writing HTTP response:", wErr.Error())
+					return
+				}
+			}
+
+			// otherwise, we respond with a 500
 			w.WriteHeader(http.StatusInternalServerError)
+			if wErr := json.NewEncoder(w).Encode(map[string]interface{}{
+				"mesage": fmt.Sprintf("invalid request: %s", err.Error()),
+			}); wErr != nil {
+				fmt.Println("failed executing action:", wErr.Error())
+				return
+			}
 			return
 		} else {
 			if err := json.NewEncoder(w).Encode(ActResponse{Result: result}); err != nil {
-				fmt.Println("failed sending response", err.Error())
+				fmt.Println("failed writing HTTP response:", err.Error())
 				return
 			}
 		}
@@ -241,14 +261,18 @@ type JSONBinder struct {
 	requestBody io.Reader
 }
 
+type InputError struct {
+	error
+}
+
 func (b *JSONBinder) BindData(ptr interface{}) error {
 	if err := json.NewDecoder(b.requestBody).Decode(ptr); err != nil {
-		return err
+		return InputError{error: err}
 	}
 
 	if v, ok := ptr.(Validator); ok {
 		if err := v.Validate(); err != nil {
-			return err
+			return InputError{error: err}
 		}
 	}
 

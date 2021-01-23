@@ -17,11 +17,11 @@ const chamberConfig = {
 		},
 		fan: {
 			source: "relay",
-			config: { pin: 20 }
+			config: { pin: "20" }
 		},
 		humidifier: {
 			source: "relay",
-			config: { pin: 26 }
+			config: { pin: "26" }
 		},
 		i2ctest: {
 			source: "i2c",
@@ -48,8 +48,8 @@ const chamberConfig = {
 		process.exit(1);
 	}
 
-	setAndSchedule("fan", "high", "low", 3000)
-	setAndSchedule("humidifier", "high", "low", 5000)
+	setAndSchedule("fan", true, false, 3000)
+	setAndSchedule("humidifier", true, false, 5000)
 	setInterval(async () => {
 		try {
 			let res = await axios.post("http://192.168.11.3:3141/act", {
@@ -97,7 +97,7 @@ async function turnState(modName, state) {
 		let res = await axios.post("http://192.168.11.3:3141/act", {
 			module: modName,
 			action: "set",
-			config: {state: state}
+			config: {high: state}
 		});
 	} catch (error) {
 		console.log(`${state} failed`, error);
