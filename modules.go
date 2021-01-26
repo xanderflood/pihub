@@ -187,12 +187,12 @@ type HTGModule struct {
 	tk htg3535ch.TemperatureK
 	rh htg3535ch.Humidity
 
-	rhCalibrationAdjustment float64
+	rhAdjustment float64
 }
 type HTGModuleConfig struct {
 	TemperatureADCChannel   int     `json:"temperature_adc_channel"`
 	HumidityADCChannel      int     `json:"humidity_adc_channel"`
-	RHCalibrationAdjustment float64 `json:"rh_calibration_adjustment"`
+	RHAdjustment float64 `json:"rh_adjustment"`
 }
 
 func (m *HTGModule) Stop() error {
@@ -232,24 +232,24 @@ func (m *HTGModule) Initialize(sp ServiceProvider, binder Binder) error {
 	}
 	m.rh = htg3535ch.NewHumidity(m.humidity)
 
-	m.rhCalibrationAdjustment = config.RHCalibrationAdjustment
+	m.rhAdjustment = config.RHAdjustment
 
 	return nil
 }
 
 type HTGCalibrateRequest struct {
 	TrueValue  *float64 `json:"true_value"`
-	Adjustment *float64 `json:"adjustment"`
+	RHAdjustment *float64 `json:"rh_adjustment"`
 }
 type HTGCalibrateResponse struct {
-	Adjustment float64 `json:"adjustment"`
+	RHAdjustment float64 `json:"rh_adjustment"`
 }
 
 func (m *HTGModule) Act(action string, body Binder) (interface{}, error) {
 	switch action {
 	case "rh":
 		val, err := m.rh.Read()
-		return val + m.rhCalibrationAdjustment, err
+		return val + m.rhAdjustment, err
 	case "tk":
 		val, err := m.tk.Read()
 		return val, err
@@ -266,8 +266,8 @@ func (m *HTGModule) Act(action string, body Binder) (interface{}, error) {
 		}
 
 		var adjustment float64
-		if request.Adjustment != nil {
-			adjustment = *request.Adjustment
+		if request.RHAdjustment != nil {
+			adjustment = *request.RHAdjustment
 		} else {
 			var trueValue = 100.0
 			if request.TrueValue != nil {
@@ -281,9 +281,9 @@ func (m *HTGModule) Act(action string, body Binder) (interface{}, error) {
 			adjustment = trueValue - val
 		}
 
-		m.rhCalibrationAdjustment = adjustment
+		m.rhAdjustment = adjustment
 		return HTGCalibrateResponse{
-			Adjustment: adjustment,
+			RHAdjustment: adjustment,
 		}, nil
 	default:
 		return nil, fmt.Errorf("no such action `%s`", action)
