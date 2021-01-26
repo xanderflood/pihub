@@ -186,10 +186,13 @@ type HTGModule struct {
 
 	tk htg3535ch.TemperatureK
 	rh htg3535ch.Humidity
+
+	rhAdjustment float64
 }
 type HTGModuleConfig struct {
-	TemperatureADCChannel int `json:"temperature_adc_channel"`
-	HumidityADCChannel    int `json:"humidity_adc_channel"`
+	TemperatureADCChannel int     `json:"temperature_adc_channel"`
+	HumidityADCChannel    int     `json:"humidity_adc_channel"`
+	RHAdjustment          float64 `json:"rh_adjustment"`
 }
 
 func (m *HTGModule) Stop() error {
@@ -215,7 +218,7 @@ func (m *HTGModule) Initialize(sp ServiceProvider, binder Binder) error {
 
 	m.temperature, err = ads.PinForChannel(
 		ads1x15.Channel(config.TemperatureADCChannel),
-		5*physic.Volt, 1*physic.Hertz, ads1x15.SaveEnergy)
+		5*physic.Volt, 1*physic.Hertz, ads1x15.BestQuality)
 	if err != nil {
 		return fmt.Errorf("failed initializing ADS1115 device: %w", err)
 	}
@@ -223,19 +226,30 @@ func (m *HTGModule) Initialize(sp ServiceProvider, binder Binder) error {
 
 	m.humidity, err = ads.PinForChannel(
 		ads1x15.Channel(config.HumidityADCChannel),
-		5*physic.Volt, 1*physic.Hertz, ads1x15.SaveEnergy)
+		5*physic.Volt, 1*physic.Hertz, ads1x15.BestQuality)
 	if err != nil {
 		return fmt.Errorf("failed initializing ADS1115 device: %w", err)
 	}
 	m.rh = htg3535ch.NewHumidity(m.humidity)
 
+	m.rhAdjustment = config.RHAdjustment
+
 	return nil
 }
-func (m *HTGModule) Act(action string, _ Binder) (interface{}, error) {
+
+type HTGCalibrateRequest struct {
+	TrueValue    *float64 `json:"true_value"`
+	RHAdjustment *float64 `json:"rh_adjustment"`
+}
+type HTGCalibrateResponse struct {
+	RHAdjustment float64 `json:"rh_adjustment"`
+}
+
+func (m *HTGModule) Act(action string, body Binder) (interface{}, error) {
 	switch action {
 	case "rh":
 		val, err := m.rh.Read()
-		return val, err
+		return val + m.rhAdjustment, err
 	case "tk":
 		val, err := m.tk.Read()
 		return val, err
@@ -245,6 +259,32 @@ func (m *HTGModule) Act(action string, _ Binder) (interface{}, error) {
 	case "tf":
 		val, err := m.tk.Read()
 		return (val-273.15)*9/5 + 32, err
+	case "calibrate":
+		var request = &HTGCalibrateRequest{}
+		if err := body.BindData(request); err != nil {
+			return nil, err
+		}
+
+		var adjustment float64
+		if request.RHAdjustment != nil {
+			adjustment = *request.RHAdjustment
+		} else {
+			var trueValue = 100.0
+			if request.TrueValue != nil {
+				trueValue = *request.TrueValue
+			}
+
+			val, err := m.rh.Read()
+			if err != nil {
+				return nil, err
+			}
+			adjustment = trueValue - val
+		}
+
+		m.rhAdjustment = adjustment
+		return HTGCalibrateResponse{
+			RHAdjustment: adjustment,
+		}, nil
 	default:
 		return nil, fmt.Errorf("no such action `%s`", action)
 	}
