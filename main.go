@@ -60,25 +60,6 @@ func (a *ManagerAgent) Act(module string, action string, binder Binder) (interfa
 
 ////////////////
 // HTTP Logic //
-func Get(ref interface{}, path ...string) (s interface{}, ok bool) {
-	defer func() {
-		if r := recover(); r != nil {
-			s = nil
-			ok = false
-		}
-	}()
-
-	return GetUnsafe(ref, path...), true
-}
-
-func GetUnsafe(ref interface{}, path ...string) (s interface{}) {
-	for _, seg := range path {
-		ref = ref.(map[string]interface{})[seg]
-	}
-
-	return ref
-}
-
 type InitializeRequest struct {
 	Modules map[string]ModuleSpec `json:"modules"`
 }
