@@ -190,9 +190,9 @@ type HTGModule struct {
 	rhAdjustment float64
 }
 type HTGModuleConfig struct {
-	TemperatureADCChannel   int     `json:"temperature_adc_channel"`
-	HumidityADCChannel      int     `json:"humidity_adc_channel"`
-	RHAdjustment float64 `json:"rh_adjustment"`
+	TemperatureADCChannel int     `json:"temperature_adc_channel"`
+	HumidityADCChannel    int     `json:"humidity_adc_channel"`
+	RHAdjustment          float64 `json:"rh_adjustment"`
 }
 
 func (m *HTGModule) Stop() error {
@@ -238,7 +238,7 @@ func (m *HTGModule) Initialize(sp ServiceProvider, binder Binder) error {
 }
 
 type HTGCalibrateRequest struct {
-	TrueValue  *float64 `json:"true_value"`
+	TrueValue    *float64 `json:"true_value"`
 	RHAdjustment *float64 `json:"rh_adjustment"`
 }
 type HTGCalibrateResponse struct {
