@@ -1,6 +1,9 @@
 package main
 
 import (
+	"sync"
+	"time"
+
 	"periph.io/x/periph/conn/gpio"
 	"periph.io/x/periph/conn/gpio/gpioreg"
 	"periph.io/x/periph/conn/i2c"
@@ -288,4 +291,188 @@ func (m *HTGModule) Act(action string, body Binder) (interface{}, error) {
 	default:
 		return nil, fmt.Errorf("no such action `%s`", action)
 	}
+}
+
+// NOTE: The pin *must* have hardware PWM support via periph
+type ServoModuleConfig struct {
+	Pin          string  `json:"pin"`
+	FrequencyHZ  int64   `json:"frequenzy_hz"`
+	DutyRatioP90 float64 `json:"duty_ratio_p90"`
+	DutyRatioN90 float64 `json:"duty_ratio_n90"`
+}
+
+func (c *ServoModuleConfig) Default() {
+	c.FrequencyHZ = 50
+	c.DutyRatioP90 = 0.05
+	c.DutyRatioN90 = 0.10
+}
+func (c ServoModuleConfig) Validate() error {
+	if c.Pin == "" {
+		return errors.New("`pin` is a required field")
+	}
+	return nil
+}
+func (c ServoModuleConfig) DutyForAngle(deg float64) gpio.Duty {
+	var normalizedValue = (deg - 90) / 180
+	var dutyRatio = (normalizedValue+1)*c.DutyRatioP90 - normalizedValue*c.DutyRatioN90
+	return dutyForRatio(dutyRatio)
+}
+func (c ServoModuleConfig) Frequency() physic.Frequency {
+	return physic.Frequency(c.FrequencyHZ) * physic.Hertz
+}
+
+type ServoModule struct {
+	config ServoModuleConfig
+	pin    gpio.PinOut
+
+	sync.Mutex
+}
+
+func (m *ServoModule) Stop() error {
+	return m.pin.Halt()
+}
+
+func (m *ServoModule) Initialize(sp ServiceProvider, binder Binder) error {
+	var err error
+	if err = binder.BindData(&m.config); err != nil {
+		return err
+	}
+
+	if m.pin, err = sp.GetGPIOByName(m.config.Pin); err != nil {
+		return fmt.Errorf("failed getting i2c device: %w", err)
+	}
+
+	return nil
+}
+
+type ServoSetAngleRequest struct {
+	Angle float64 `json:"angle"`
+}
+
+func (m *ServoModule) Act(action string, body Binder) (interface{}, error) {
+	switch action {
+	case "set":
+		var request = &ServoSetAngleRequest{}
+		if err := body.BindData(request); err != nil {
+			return nil, err
+		}
+
+		var duty = m.config.DutyForAngle(request.Angle)
+		m.pin.PWM(duty, m.config.Frequency())
+
+		return nil, fmt.Errorf("no such action `%s`", action)
+	default:
+		return nil, fmt.Errorf("no such action `%s`", action)
+	}
+}
+
+func dutyForRatio(v float64) gpio.Duty {
+	var floatVal = v * float64(gpio.DutyMax)
+	return gpio.Duty(floatVal)
+}
+
+type HCSRO4Config struct {
+	TriggerPin string `json:"trigger_pin"`
+	EchoPin    string `json:"echo_pin"`
+}
+
+func (c HCSRO4Config) Validate() error {
+	if c.TriggerPin == "" {
+		return errors.New("`trigger_pin` is a required field")
+	}
+	if c.EchoPin == "" {
+		return errors.New("`echo_pin` is a required field")
+	}
+	return nil
+}
+
+type HCSRO4Module struct {
+	trigger gpio.PinOut
+	echo    gpio.PinIn
+}
+
+func (m *HCSRO4Module) Initialize(sp ServiceProvider, binder Binder) error {
+	var err error
+	var config HCSRO4Config
+	if err = binder.BindData(&config); err != nil {
+		return err
+	}
+
+	if m.trigger, err = sp.GetGPIOByName(config.TriggerPin); err != nil {
+		return fmt.Errorf("failed getting trigger pin: %w", err)
+	}
+	if m.echo, err = sp.GetGPIOByName(config.EchoPin); err != nil {
+		return fmt.Errorf("failed getting echo pin: %w", err)
+	}
+
+	return nil
+}
+
+func (m *HCSRO4Module) Stop() error {
+	_ = m.trigger.Halt()
+	return m.echo.Halt()
+}
+
+// ServoSetAngleResponse represents a range reading in meters. The
+// range value is nil when no object was in range.
+type ServoSetAngleResponse struct {
+	OutOfRange     bool     `json:"in_range,omitempty"`
+	DistanceMeters *float64 `json:"distance_meters,omitempty"`
+}
+
+func ServoSetAngleResponseFor(val *float64) ServoSetAngleResponse {
+	if val != nil {
+		return ServoSetAngleResponse{DistanceMeters: val}
+	}
+	return ServoSetAngleResponse{OutOfRange: true}
+}
+
+func (m *HCSRO4Module) Act(action string, body Binder) (interface{}, error) {
+	switch action {
+	case "read_meters":
+		distanceM, err := m.readDistanceM()
+		if err != nil {
+			return nil, err
+		}
+
+		return ServoSetAngleResponseFor(distanceM), nil
+	default:
+		return nil, fmt.Errorf("no such action `%s`", action)
+	}
+}
+
+func (d *HCSRO4Module) readDistanceM() (*float64, error) {
+	pulseDuration, err := d.readDuration()
+	if err != nil || pulseDuration == nil {
+		return nil, err
+	}
+
+	// 0.1715 = half of 0.343, which is the speed
+	// of sound in meters / microsecond
+	val := float64(*pulseDuration) * 0.1715
+	return &val, nil
+}
+
+const HCSRO4TimeoutDuration = 38_000 * time.Microsecond
+
+func (m *HCSRO4Module) readDuration() (*time.Duration, error) {
+	m.trigger.Out(gpio.Low)
+	time.Sleep(2 * time.Microsecond)
+	m.trigger.Out(gpio.High)
+	time.Sleep(12 * time.Microsecond)
+	m.trigger.Out(gpio.Low)
+
+	m.echo.In(gpio.PullNoChange, gpio.RisingEdge)
+	if !m.echo.WaitForEdge(HCSRO4TimeoutDuration) {
+		return nil, errors.New("failed to read range")
+	}
+
+	m.echo.In(gpio.PullNoChange, gpio.FallingEdge)
+	start := time.Now()
+	if !m.echo.WaitForEdge(HCSRO4TimeoutDuration) {
+		return nil, nil
+	}
+
+	dur := time.Since(start)
+	return &dur, nil
 }

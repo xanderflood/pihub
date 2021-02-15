@@ -35,6 +35,8 @@ var ModuleIndex = map[string]ModuleFactory{
 	"htg3535ch": func() Module { return &HTGModule{} },
 	"i2c":       func() Module { return &I2CModule{} },
 	"ads":       func() Module { return &ADS1115Module{} },
+	"servo":     func() Module { return &ServoModule{} },
+	"hcsro4":    func() Module { return &HCSRO4Module{} },
 }
 
 func (a *ManagerAgent) InitializeModules(specs map[string]ModuleSpec) error {
@@ -238,6 +240,10 @@ type Validator interface {
 	Validate() error
 }
 
+type Defaulter interface {
+	Default()
+}
+
 type JSONBinder struct {
 	requestBody io.Reader
 }
@@ -247,6 +253,10 @@ type InputError struct {
 }
 
 func (b *JSONBinder) BindData(ptr interface{}) error {
+	if v, ok := ptr.(Defaulter); ok {
+		v.Default()
+	}
+
 	if err := json.NewDecoder(b.requestBody).Decode(ptr); err != nil {
 		return InputError{error: err}
 	}
