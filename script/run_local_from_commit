@@ -1,0 +1,6 @@
+#!/bin/sh -xe
+
+git checkout $1
+
+./script/build_binary
+./dist/pihub/pihub

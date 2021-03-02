@@ -1,0 +1,3 @@
+#!/bin/sh -xe
+
+go build -o dist/pihub/pihub ./
