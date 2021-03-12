@@ -372,8 +372,9 @@ func dutyForRatio(v float64) gpio.Duty {
 }
 
 type HCSRO4Config struct {
-	TriggerPin string `json:"trigger_pin"`
-	EchoPin    string `json:"echo_pin"`
+	TriggerPin       string   `json:"trigger_pin"`
+	EchoPin          string   `json:"echo_pin"`
+	SpeedOfSoundMPMS *float64 `json:"speed_of_sound_mpms"`
 }
 
 func (c HCSRO4Config) Validate() error {
@@ -387,8 +388,9 @@ func (c HCSRO4Config) Validate() error {
 }
 
 type HCSRO4Module struct {
-	trigger gpio.PinOut
-	echo    gpio.PinIn
+	trigger     gpio.PinOut
+	echo        gpio.PinIn
+	coefficient float64
 }
 
 func (m *HCSRO4Module) Initialize(sp ServiceProvider, binder Binder) error {
@@ -403,6 +405,14 @@ func (m *HCSRO4Module) Initialize(sp ServiceProvider, binder Binder) error {
 	}
 	if m.echo, err = sp.GetGPIOByName(config.EchoPin); err != nil {
 		return fmt.Errorf("failed getting echo pin: %w", err)
+	}
+
+	// 0.1715 = half of 0.343 m/micros the speed of sound
+	m.coefficient = 0.1715
+	if config.SpeedOfSoundMPMS != nil {
+		// convert m/ms to meters/micros, then divide by
+		// two since its a round trip.
+		m.coefficient = *config.SpeedOfSoundMPMS / 2000.0
 	}
 
 	return nil
@@ -430,12 +440,7 @@ func ServoSetAngleResponseFor(val *float64) ServoSetAngleResponse {
 func (m *HCSRO4Module) Act(action string, body Binder) (interface{}, error) {
 	switch action {
 	case "read_meters":
-		distanceM, err := m.readDistanceM()
-		if err != nil {
-			return nil, err
-		}
-
-		return ServoSetAngleResponseFor(distanceM), nil
+		return m.readDistanceM()
 	default:
 		return nil, fmt.Errorf("no such action `%s`", action)
 	}
@@ -447,9 +452,7 @@ func (d *HCSRO4Module) readDistanceM() (*float64, error) {
 		return nil, err
 	}
 
-	// 0.1715 = half of 0.343, which is the speed
-	// of sound in meters / microsecond
-	val := float64(*pulseDuration) * 0.1715
+	val := float64(*pulseDuration) * d.coefficient
 	return &val, nil
 }
 
