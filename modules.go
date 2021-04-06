@@ -313,7 +313,7 @@ func (c ServoModuleConfig) Validate() error {
 	return nil
 }
 func (c ServoModuleConfig) DutyForAngle(deg float64) gpio.Duty {
-	var normalizedValue = (deg - 90) / 180
+	var normalizedValue = (deg + 90) / 180
 	var dutyRatio = (normalizedValue+1)*c.DutyRatioP90 - normalizedValue*c.DutyRatioN90
 	return dutyForRatio(dutyRatio)
 }
@@ -358,6 +358,7 @@ func (m *ServoModule) Act(action string, body Binder) (interface{}, error) {
 		}
 
 		var duty = m.config.DutyForAngle(request.Angle)
+		fmt.Println("Setting servo duty ratio to:", duty)
 		if err := m.pin.PWM(duty, m.config.Frequency()); err != nil {
 			return nil, fmt.Errorf("failed setting PWM: %w", err)
 		}
