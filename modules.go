@@ -358,9 +358,11 @@ func (m *ServoModule) Act(action string, body Binder) (interface{}, error) {
 		}
 
 		var duty = m.config.DutyForAngle(request.Angle)
-		m.pin.PWM(duty, m.config.Frequency())
+		if err := m.pin.PWM(duty, m.config.Frequency()); err != nil {
+			return nil, fmt.Errorf("failed setting PWM: %w", err)
+		}
 
-		return nil, fmt.Errorf("no such action `%s`", action)
+		return nil, nil
 	default:
 		return nil, fmt.Errorf("no such action `%s`", action)
 	}
