@@ -10,6 +10,7 @@ import (
 	"periph.io/x/periph/conn/i2c"
 	"periph.io/x/periph/conn/i2c/i2creg"
 	"periph.io/x/periph/host"
+	"periph.io/x/periph/host/bcm283x"
 
 	"encoding/json"
 	"errors"
@@ -225,6 +226,10 @@ func (a *ServiceAgent) GetDefaultI2CBus() (i2c.BusCloser, error) {
 	return a.defaultI2CBus, nil
 }
 func (a *ServiceAgent) GetGPIOByName(name string) (gpio.PinIO, error) {
+	if name == "18" {
+		return bcm283x.GPIO18, nil
+	}
+
 	return gpioreg.ByName(name), nil
 }
 func (a *ServiceAgent) Close() error {
