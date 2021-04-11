@@ -313,10 +313,15 @@ func (c ServoModuleConfig) Validate() error {
 	return nil
 }
 func (c ServoModuleConfig) DutyForAngle(deg float64) gpio.Duty {
-	var normalizedValue = (deg + 90) / 180
-	var dutyRatio = (normalizedValue+1)*c.DutyRatioP90 - normalizedValue*c.DutyRatioN90
-	return dutyForRatio(dutyRatio)
+	var angleRatio = (deg + 90) / 180
+	fmt.Println(angleRatio)
+	var dutyRatio = angleRatio*(c.DutyRatioP90-c.DutyRatioN90) + c.DutyRatioN90
+	fmt.Println(dutyRatio)
+	var duty = gpio.Duty(dutyRatio * float64(gpio.DutyMax))
+	fmt.Println(duty)
+	return duty
 }
+
 func (c ServoModuleConfig) Frequency() physic.Frequency {
 	return physic.Frequency(c.FrequencyHZ) * physic.Hertz
 }
@@ -358,7 +363,7 @@ func (m *ServoModule) Act(action string, body Binder) (interface{}, error) {
 		}
 
 		var duty = m.config.DutyForAngle(request.Angle)
-		fmt.Println("Setting servo duty ratio to:", duty)
+		fmt.Println("TODO remove Setting servo duty ratio to:", duty)
 		if err := m.pin.PWM(duty, m.config.Frequency()); err != nil {
 			return nil, fmt.Errorf("failed setting PWM: %w", err)
 		}
@@ -367,11 +372,6 @@ func (m *ServoModule) Act(action string, body Binder) (interface{}, error) {
 	default:
 		return nil, fmt.Errorf("no such action `%s`", action)
 	}
-}
-
-func dutyForRatio(v float64) gpio.Duty {
-	var floatVal = v * float64(gpio.DutyMax)
-	return gpio.Duty(floatVal)
 }
 
 type HCSRO4Config struct {
