@@ -11,7 +11,7 @@ WorkingDirectory=$(pwd)
 StandardOutput=inherit
 StandardError=inherit
 Restart=always
-User=${USER}
+User=root
 
 [Install]
 WantedBy=multi-user.target
